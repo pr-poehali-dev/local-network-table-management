@@ -6,7 +6,7 @@ import Icon from "@/components/ui/icon";
 
 type CellValue = string | number | null;
 type ColType = "text" | "number" | "date" | "formula";
-type Section = "tables" | "forms" | "import" | "export" | "relations";
+type Section = "tables" | "forms" | "reports" | "import" | "export" | "relations";
 
 interface Column {
   id: string;
@@ -57,6 +57,31 @@ interface Relation {
   toTable: string;
   toCol: string;
   type: "1:1" | "1:N" | "N:M";
+}
+
+type ReportColAgg = "none" | "sum" | "avg" | "count" | "min" | "max";
+
+interface ReportCol {
+  id: string;
+  tableId: string;
+  colId: string;
+  agg: ReportColAgg;
+  label: string;
+}
+
+interface ReportDef {
+  id: string;
+  name: string;
+  tableId: string;
+  cols: ReportCol[];
+  groupByColId: string | null;
+  filterColId: string | null;
+  filterVal: string;
+  sortColId: string | null;
+  sortDir: "asc" | "desc";
+  showTotals: boolean;
+  title: string;
+  subtitle: string;
 }
 
 // ─── Utils ────────────────────────────────────────────────────────────────────
@@ -149,6 +174,21 @@ const INIT_RELATIONS: Relation[] = [
   { id: "rel1", fromTable: "t1", fromCol: "c1", toTable: "t2", toCol: "a2", type: "N:M" },
 ];
 
+const INIT_REPORTS: ReportDef[] = [
+  {
+    id: "rpt1", name: "Итоги по прайс-листу", tableId: "t1",
+    cols: [
+      { id: "rc1", tableId: "t1", colId: "c1", agg: "none", label: "Наименование" },
+      { id: "rc2", tableId: "t1", colId: "c2", agg: "sum", label: "Кол-во (итого)" },
+      { id: "rc3", tableId: "t1", colId: "c3", agg: "avg", label: "Средняя цена" },
+      { id: "rc4", tableId: "t1", colId: "c4", agg: "sum", label: "Сумма" },
+    ],
+    groupByColId: null, filterColId: null, filterVal: "",
+    sortColId: null, sortDir: "asc", showTotals: true,
+    title: "Отчёт по прайс-листу", subtitle: "",
+  },
+];
+
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function Modal({ title, onClose, children, wide }: { title: string; onClose: () => void; children: React.ReactNode; wide?: boolean }) {
@@ -229,6 +269,8 @@ const Index = () => {
   const [activeTableId, setActiveTableId] = useState<string>("t1");
   const [relations, setRelations] = useState<Relation[]>(INIT_RELATIONS);
   const [forms, setForms] = useState<FormDef[]>(INIT_FORMS);
+  const [reports, setReports] = useState<ReportDef[]>(INIT_REPORTS);
+  const [activeReportId, setActiveReportId] = useState<string | null>("rpt1");
 
   // table state
   const [search, setSearch] = useState("");
@@ -242,7 +284,7 @@ const Index = () => {
   const [editValue, setEditValue] = useState("");
 
   // modals
-  type ModalType = null | "newFolder" | "newFile" | "renameFolder" | "renameFile" | "addCol" | "addRelation" | "newForm" | "editForm" | "fillForm";
+  type ModalType = null | "newFolder" | "newFile" | "renameFolder" | "renameFile" | "addCol" | "addRelation" | "newForm" | "editForm" | "fillForm" | "newReport" | "editReport";
   const [modal, setModal] = useState<ModalType>(null);
   const [modalData, setModalData] = useState<Record<string, string>>({});
   const [editingFormId, setEditingFormId] = useState<string | null>(null);
@@ -569,6 +611,7 @@ const Index = () => {
   const navItems: { id: Section; label: string; icon: string }[] = [
     { id: "tables", label: "Таблицы", icon: "Table2" },
     { id: "forms", label: "Формы", icon: "LayoutList" },
+    { id: "reports", label: "Отчёты", icon: "BarChart3" },
     { id: "import", label: "Импорт", icon: "Upload" },
     { id: "export", label: "Экспорт", icon: "Download" },
     { id: "relations", label: "Связи", icon: "GitMerge" },
@@ -601,6 +644,7 @@ const Index = () => {
                   <span className="flex-1 text-left">{item.label}</span>
                   {item.id === "tables" && <span className={`font-mono text-xs ${section === "tables" ? "text-primary" : "text-muted-foreground"}`}>{tables.length}</span>}
                   {item.id === "forms" && <span className={`font-mono text-xs ${section === "forms" ? "text-primary" : "text-muted-foreground"}`}>{forms.length}</span>}
+                  {item.id === "reports" && <span className={`font-mono text-xs ${section === "reports" ? "text-primary" : "text-muted-foreground"}`}>{reports.length}</span>}
                 </button>
               ))}
             </div>
@@ -624,14 +668,14 @@ const Index = () => {
               {/* Folders */}
               {folders.map(folder => (
                 <div key={folder.id}>
-                  <div className="flex items-center gap-1 px-1 py-1 rounded hover:bg-secondary group cursor-pointer"
-                    onClick={() => toggleFolder(folder.id)}>
-                    <Icon name={folder.open ? "ChevronDown" : "ChevronRight"} size={11} className="text-muted-foreground" />
-                    <Icon name={folder.open ? "FolderOpen" : "Folder"} size={13} className="text-warning" />
-                    <span className="flex-1 text-xs text-foreground truncate">{folder.name}</span>
+                  <div className="flex items-center gap-1 px-1 py-1 rounded hover:bg-secondary group">
+                    <button className="flex items-center gap-1 flex-1 min-w-0" onClick={() => toggleFolder(folder.id)}>
+                      <Icon name={folder.open ? "ChevronDown" : "ChevronRight"} size={11} className="text-muted-foreground shrink-0" />
+                      <Icon name={folder.open ? "FolderOpen" : "Folder"} size={13} className="text-warning shrink-0" />
+                      <span className="flex-1 text-xs text-foreground truncate text-left">{folder.name}</span>
+                    </button>
                     <Dropdown trigger={
-                      <button onClick={e => e.stopPropagation()}
-                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-card text-muted-foreground">
+                      <button className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-card text-muted-foreground transition-opacity shrink-0">
                         <Icon name="MoreVertical" size={11} />
                       </button>
                     }>
@@ -882,6 +926,17 @@ const Index = () => {
                   className="mt-3 text-xs text-primary hover:underline">Создать файл</button>
               </div>
             </div>
+          )}
+
+          {/* ══ REPORTS ══ */}
+          {section === "reports" && (
+            <ReportsSection
+              reports={reports} setReports={setReports}
+              tables={tables}
+              activeReportId={activeReportId} setActiveReportId={setActiveReportId}
+              onOpenNew={() => { setModalData({ rptName: "", rptTableId: tables[0]?.id ?? "" }); setModal("newReport"); }}
+              onOpenEdit={(id) => { setActiveReportId(id); setModal("editReport"); }}
+            />
           )}
 
           {/* ══ FORMS ══ */}
@@ -1324,6 +1379,27 @@ const Index = () => {
           </Modal>
         )}
 
+        {modal === "newReport" && (
+          <NewReportModal
+            tables={tables}
+            onClose={() => setModal(null)}
+            onSave={(r) => { setReports(prev => [...prev, r]); setActiveReportId(r.id); setSection("reports"); setModal(null); }}
+          />
+        )}
+
+        {modal === "editReport" && activeReportId && (() => {
+          const rpt = reports.find(r => r.id === activeReportId);
+          if (!rpt) return null;
+          return (
+            <EditReportModal
+              report={rpt}
+              tables={tables}
+              onClose={() => setModal(null)}
+              onSave={(updated) => { setReports(prev => prev.map(r => r.id === updated.id ? updated : r)); setModal(null); }}
+            />
+          );
+        })()}
+
       </div>
     </>
   );
@@ -1417,6 +1493,471 @@ function FileItem({ tbl, active, onClick, onDelete, onRename, onExportXLSX, onEx
         <DropItem icon="Trash2" label="Удалить файл" danger onClick={onDelete} />
       </Dropdown>
     </div>
+  );
+}
+
+// ─── Reports Section ──────────────────────────────────────────────────────────
+
+interface ReportsSectionProps {
+  reports: ReportDef[];
+  setReports: React.Dispatch<React.SetStateAction<ReportDef[]>>;
+  tables: TableFile[];
+  activeReportId: string | null;
+  setActiveReportId: (id: string | null) => void;
+  onOpenNew: () => void;
+  onOpenEdit: (id: string) => void;
+}
+
+function aggLabel(agg: ReportColAgg): string {
+  return { none: "—", sum: "Σ сумма", avg: "⌀ среднее", count: "# кол-во", min: "↓ мин", max: "↑ макс" }[agg];
+}
+
+function computeAgg(values: CellValue[], agg: ReportColAgg): string {
+  const nums = values.map(v => Number(v ?? 0)).filter(n => !isNaN(n));
+  if (agg === "count") return String(values.length);
+  if (nums.length === 0) return "—";
+  if (agg === "sum") return nums.reduce((a, b) => a + b, 0).toLocaleString("ru");
+  if (agg === "avg") return (nums.reduce((a, b) => a + b, 0) / nums.length).toLocaleString("ru", { maximumFractionDigits: 2 });
+  if (agg === "min") return Math.min(...nums).toLocaleString("ru");
+  if (agg === "max") return Math.max(...nums).toLocaleString("ru");
+  return "—";
+}
+
+function ReportsSection({ reports, setReports, tables, activeReportId, setActiveReportId, onOpenNew, onOpenEdit }: ReportsSectionProps) {
+  const report = reports.find(r => r.id === activeReportId) ?? reports[0] ?? null;
+  const table = tables.find(t => t.id === report?.tableId);
+
+  const reportRows = useMemo(() => {
+    if (!report || !table) return [];
+    let rows = [...table.rows];
+    if (report.filterColId && report.filterVal) {
+      rows = rows.filter(r => String(r.cells[report.filterColId!] ?? "").toLowerCase().includes(report.filterVal.toLowerCase()));
+    }
+    if (report.sortColId) {
+      rows.sort((a, b) => {
+        const av = a.cells[report.sortColId!] ?? "";
+        const bv = b.cells[report.sortColId!] ?? "";
+        if (typeof av === "number" && typeof bv === "number") return report.sortDir === "asc" ? av - bv : bv - av;
+        return report.sortDir === "asc" ? String(av).localeCompare(String(bv), "ru") : String(bv).localeCompare(String(av), "ru");
+      });
+    }
+    return rows;
+  }, [report, table]);
+
+  const groupedReport = useMemo(() => {
+    if (!report?.groupByColId) return null;
+    const map: Record<string, Row[]> = {};
+    reportRows.forEach(r => {
+      const key = String(r.cells[report.groupByColId!] ?? "(пусто)");
+      if (!map[key]) map[key] = [];
+      map[key].push(r);
+    });
+    return map;
+  }, [reportRows, report]);
+
+  const getCellVal = (row: Row, rc: ReportCol): string => {
+    const col = table?.columns.find(c => c.id === rc.colId);
+    if (!col) return "";
+    if (col.type === "formula") return evalFormula(col.formula ?? "", row, table!.columns);
+    return String(row.cells[rc.colId] ?? "");
+  };
+
+  const printReport = () => {
+    if (!report || !table) return;
+    const colDefs = report.cols;
+    const header = colDefs.map(rc => `<th>${rc.label}</th>`).join("");
+    let bodyHtml = "";
+    if (groupedReport) {
+      Object.entries(groupedReport).forEach(([group, rows]) => {
+        bodyHtml += `<tr class="group-row"><td colspan="${colDefs.length}" style="background:#f0f0f0;font-weight:600;padding:4px 8px">${group} (${rows.length})</td></tr>`;
+        rows.forEach((row, ri) => {
+          bodyHtml += `<tr><td style="color:#999;font-size:10px">${ri + 1}</td>${colDefs.map(rc => `<td>${getCellVal(row, rc)}</td>`).join("")}</tr>`;
+        });
+      });
+    } else {
+      bodyHtml = reportRows.map((row, i) =>
+        `<tr><td style="color:#999;font-size:10px">${i + 1}</td>${colDefs.map(rc => `<td>${getCellVal(row, rc)}</td>`).join("")}</tr>`
+      ).join("");
+    }
+    let totalsHtml = "";
+    if (report.showTotals) {
+      totalsHtml = `<tfoot><tr style="font-weight:600;background:#f0f0f0"><td>Итого</td>${colDefs.map(rc => {
+        if (rc.agg === "none") return "<td></td>";
+        const vals = reportRows.map(row => row.cells[rc.colId]);
+        return `<td>${computeAgg(vals, rc.agg)}</td>`;
+      }).join("")}</tr></tfoot>`;
+    }
+    const html = `<table><thead><tr><th>#</th>${header}</tr></thead><tbody>${bodyHtml}</tbody>${totalsHtml}</table>`;
+    const win = window.open("", "_blank");
+    if (!win) return;
+    win.document.write(`<html><head><title>${report.name}</title><style>
+      body{font-family:'IBM Plex Sans',sans-serif;font-size:12px;padding:20px;color:#111;}
+      h1{font-size:16px;margin-bottom:4px;} p{color:#666;font-size:11px;margin-bottom:16px;}
+      table{border-collapse:collapse;width:100%;}
+      th,td{border:1px solid #ccc;padding:5px 8px;text-align:left;}
+      th{background:#f4f4f4;font-weight:600;}
+      tr:nth-child(even){background:#fafafa;}
+      @media print{body{padding:0;}}
+    </style></head><body>
+    <h1>${report.title || report.name}</h1>
+    ${report.subtitle ? `<p>${report.subtitle}</p>` : `<p>Дата: ${new Date().toLocaleDateString("ru")} · Строк: ${reportRows.length}</p>`}
+    ${html}</body></html>`);
+    win.document.close();
+    win.focus();
+    win.print();
+    win.close();
+  };
+
+  const exportReportXLSX = () => {
+    if (!report) return;
+    const header = report.cols.map(rc => rc.label);
+    const body = reportRows.map(row => report.cols.map(rc => getCellVal(row, rc)));
+    const totalsRow = report.showTotals
+      ? report.cols.map(rc => rc.agg === "none" ? "" : computeAgg(reportRows.map(r => r.cells[rc.colId]), rc.agg))
+      : null;
+    const data = totalsRow ? [header, ...body, totalsRow] : [header, ...body];
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, report.name.slice(0, 31));
+    XLSX.writeFile(wb, `${report.name}.xlsx`);
+  };
+
+  return (
+    <div className="flex flex-1 overflow-hidden">
+      {/* Report list sidebar */}
+      <div className="w-52 border-r border-border flex flex-col bg-card shrink-0">
+        <div className="flex items-center justify-between px-3 py-2 border-b border-border">
+          <span className="text-xs text-muted-foreground font-mono uppercase tracking-wide">Отчёты</span>
+          <button onClick={onOpenNew} className="p-1 rounded hover:bg-secondary text-muted-foreground hover:text-foreground">
+            <Icon name="Plus" size={12} />
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+          {reports.map(r => (
+            <div key={r.id}
+              className={`flex items-center gap-2 px-2.5 py-2 rounded text-xs cursor-pointer transition-colors group ${r.id === activeReportId ? "bg-primary/15 text-primary" : "text-foreground hover:bg-secondary"}`}
+              onClick={() => setActiveReportId(r.id)}>
+              <Icon name="BarChart3" size={12} className={r.id === activeReportId ? "text-primary" : "text-muted-foreground"} />
+              <span className="flex-1 truncate">{r.name}</span>
+              <button
+                onClick={e => { e.stopPropagation(); setReports(prev => prev.filter(rr => rr.id !== r.id)); if (activeReportId === r.id) setActiveReportId(null); }}
+                className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:text-destructive text-muted-foreground transition-opacity">
+                <Icon name="X" size={11} />
+              </button>
+            </div>
+          ))}
+          {reports.length === 0 && <p className="text-xs text-muted-foreground italic px-2 py-2">Нет отчётов</p>}
+        </div>
+      </div>
+
+      {/* Report viewer */}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {!report ? (
+          <div className="flex-1 flex items-center justify-center text-muted-foreground">
+            <div className="text-center">
+              <Icon name="BarChart3" size={36} className="mx-auto mb-3 opacity-20" />
+              <p className="text-sm">Выберите отчёт или создайте новый</p>
+              <button onClick={onOpenNew} className="mt-2 text-xs text-primary hover:underline">+ Новый отчёт</button>
+            </div>
+          </div>
+        ) : (
+          <>
+            {/* Report toolbar */}
+            <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-card shrink-0">
+              <Icon name="BarChart3" size={13} className="text-primary" />
+              <span className="text-sm font-medium text-foreground">{report.name}</span>
+              <span className="text-xs text-muted-foreground font-mono">({reportRows.length} стр.)</span>
+              <div className="flex-1" />
+              <button onClick={() => onOpenEdit(report.id)}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                <Icon name="Settings" size={12} />Настроить
+              </button>
+              <button onClick={exportReportXLSX}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors">
+                <Icon name="Download" size={12} />XLSX
+              </button>
+              <button onClick={printReport}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded text-xs bg-primary text-primary-foreground hover:bg-primary/90 transition-colors">
+                <Icon name="Printer" size={12} />Печать
+              </button>
+            </div>
+
+            {/* Report meta */}
+            {(report.title || report.subtitle) && (
+              <div className="px-4 py-2 border-b border-border bg-muted/30">
+                {report.title && <p className="text-sm font-medium text-foreground">{report.title}</p>}
+                {report.subtitle && <p className="text-xs text-muted-foreground">{report.subtitle}</p>}
+              </div>
+            )}
+
+            {/* Report table */}
+            <div className="flex-1 overflow-auto">
+              {report.cols.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-muted-foreground">
+                  <div className="text-center">
+                    <Icon name="Columns" size={28} className="mx-auto mb-2 opacity-20" />
+                    <p className="text-xs">Нет колонок — нажмите «Настроить»</p>
+                  </div>
+                </div>
+              ) : (
+                <table className="border-collapse w-full text-xs">
+                  <thead className="sticky top-0 z-10">
+                    <tr className="bg-card border-b border-border">
+                      <th className="w-8 px-2 py-2 text-muted-foreground font-mono border-r border-border">#</th>
+                      {report.cols.map(rc => {
+                        const col = table?.columns.find(c => c.id === rc.colId);
+                        return (
+                          <th key={rc.id} className="px-3 py-2 text-left border-r border-border">
+                            <div className="text-muted-foreground font-medium">{rc.label}</div>
+                            {rc.agg !== "none" && <div className="text-primary/60 font-mono text-xs">{aggLabel(rc.agg)}</div>}
+                            {col && <div className="text-muted-foreground/50 text-xs font-mono">{col.name}</div>}
+                          </th>
+                        );
+                      })}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {groupedReport
+                      ? Object.entries(groupedReport).map(([group, rows]) => (
+                        <>
+                          <tr key={`g-${group}`} className="bg-muted/50 border-b border-border">
+                            <td colSpan={report.cols.length + 1} className="px-3 py-1.5">
+                              <span className="font-mono text-xs text-muted-foreground">{group}</span>
+                              <span className="text-xs text-primary ml-2">({rows.length})</span>
+                            </td>
+                          </tr>
+                          {rows.map((row, ri) => (
+                            <tr key={row.id} className="border-b border-border hover:bg-secondary/30 transition-colors">
+                              <td className="px-2 py-2 text-muted-foreground font-mono text-right border-r border-border">{ri + 1}</td>
+                              {report.cols.map(rc => (
+                                <td key={rc.id} className="px-3 py-2 border-r border-border text-foreground">{getCellVal(row, rc)}</td>
+                              ))}
+                            </tr>
+                          ))}
+                        </>
+                      ))
+                      : reportRows.map((row, i) => (
+                        <tr key={row.id} className="border-b border-border hover:bg-secondary/30 transition-colors">
+                          <td className="px-2 py-2 text-muted-foreground font-mono text-right border-r border-border">{i + 1}</td>
+                          {report.cols.map(rc => (
+                            <td key={rc.id} className="px-3 py-2 border-r border-border text-foreground">{getCellVal(row, rc)}</td>
+                          ))}
+                        </tr>
+                      ))
+                    }
+                    {reportRows.length === 0 && (
+                      <tr>
+                        <td colSpan={report.cols.length + 1} className="text-center py-10 text-muted-foreground">
+                          <p className="text-xs">Нет данных по заданным фильтрам</p>
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                  {report.showTotals && report.cols.some(rc => rc.agg !== "none") && (
+                    <tfoot>
+                      <tr className="border-t-2 border-border bg-muted/50 sticky bottom-0">
+                        <td className="px-2 py-2 text-muted-foreground font-mono text-center border-r border-border">Σ</td>
+                        {report.cols.map(rc => {
+                          if (rc.agg === "none") return <td key={rc.id} className="border-r border-border" />;
+                          const vals = reportRows.map(r => r.cells[rc.colId]);
+                          return <td key={rc.id} className="px-3 py-2 font-mono text-primary border-r border-border">{computeAgg(vals, rc.agg)}</td>;
+                        })}
+                      </tr>
+                    </tfoot>
+                  )}
+                </table>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Report Modals (rendered in Index) ───────────────────────────────────────
+
+export function NewReportModal({ tables, onClose, onSave }: {
+  tables: TableFile[];
+  onClose: () => void;
+  onSave: (r: ReportDef) => void;
+}) {
+  const [name, setName] = useState("");
+  const [tableId, setTableId] = useState(tables[0]?.id ?? "");
+  return (
+    <Modal title="Новый отчёт" onClose={onClose}>
+      <div className="space-y-3">
+        <input autoFocus className="w-full bg-secondary text-sm text-foreground rounded px-3 py-2 outline-none border border-border focus:border-primary"
+          placeholder="Название отчёта" value={name} onChange={e => setName(e.target.value)} />
+        <label className="block">
+          <span className="text-xs text-muted-foreground">Источник данных</span>
+          <select className="mt-1 w-full bg-secondary text-sm text-foreground rounded px-3 py-2 outline-none border border-border"
+            value={tableId} onChange={e => setTableId(e.target.value)}>
+            {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </label>
+        <div className="flex gap-2 justify-end">
+          <button onClick={onClose} className="px-3 py-1.5 text-xs rounded bg-secondary text-foreground">Отмена</button>
+          <button onClick={() => {
+            if (!name.trim() || !tableId) return;
+            const tbl = tables.find(t => t.id === tableId)!;
+            const cols: ReportCol[] = tbl.columns.filter(c => c.type !== "formula").map(c => ({
+              id: makeId(), tableId, colId: c.id, agg: c.type === "number" ? "sum" : "none", label: c.name,
+            }));
+            onSave({ id: makeId(), name: name.trim(), tableId, cols, groupByColId: null, filterColId: null, filterVal: "", sortColId: null, sortDir: "asc", showTotals: true, title: name.trim(), subtitle: "" });
+          }} className="px-3 py-1.5 text-xs rounded bg-primary text-primary-foreground">Создать</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+export function EditReportModal({ report, tables, onClose, onSave }: {
+  report: ReportDef;
+  tables: TableFile[];
+  onClose: () => void;
+  onSave: (r: ReportDef) => void;
+}) {
+  const [draft, setDraft] = useState<ReportDef>({ ...report, cols: report.cols.map(c => ({ ...c })) });
+  const table = tables.find(t => t.id === draft.tableId);
+  const set = (patch: Partial<ReportDef>) => setDraft(d => ({ ...d, ...patch }));
+
+  const addCol = () => {
+    const firstUnused = table?.columns.find(c => !draft.cols.some(rc => rc.colId === c.id));
+    if (!firstUnused) return;
+    setDraft(d => ({ ...d, cols: [...d.cols, { id: makeId(), tableId: d.tableId, colId: firstUnused.id, agg: firstUnused.type === "number" ? "sum" : "none", label: firstUnused.name }] }));
+  };
+
+  const updateCol = (id: string, patch: Partial<ReportCol>) => {
+    setDraft(d => ({ ...d, cols: d.cols.map(c => c.id === id ? { ...c, ...patch } : c) }));
+  };
+
+  const removeCol = (id: string) => {
+    setDraft(d => ({ ...d, cols: d.cols.filter(c => c.id !== id) }));
+  };
+
+  return (
+    <Modal title={`Настройка: ${report.name}`} onClose={onClose} wide>
+      <div className="space-y-4">
+        {/* Meta */}
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className="text-xs text-muted-foreground">Название отчёта</span>
+            <input className="mt-1 w-full bg-secondary text-xs text-foreground rounded px-2 py-1.5 outline-none border border-border focus:border-primary"
+              value={draft.name} onChange={e => set({ name: e.target.value })} />
+          </label>
+          <label className="block">
+            <span className="text-xs text-muted-foreground">Источник</span>
+            <select className="mt-1 w-full bg-secondary text-xs text-foreground rounded px-2 py-1.5 outline-none border border-border"
+              value={draft.tableId} onChange={e => set({ tableId: e.target.value, cols: [] })}>
+              {tables.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-xs text-muted-foreground">Заголовок для печати</span>
+            <input className="mt-1 w-full bg-secondary text-xs text-foreground rounded px-2 py-1.5 outline-none border border-border focus:border-primary"
+              value={draft.title} onChange={e => set({ title: e.target.value })} />
+          </label>
+          <label className="block">
+            <span className="text-xs text-muted-foreground">Подзаголовок</span>
+            <input className="mt-1 w-full bg-secondary text-xs text-foreground rounded px-2 py-1.5 outline-none border border-border focus:border-primary"
+              value={draft.subtitle} onChange={e => set({ subtitle: e.target.value })} />
+          </label>
+        </div>
+
+        {/* Filters & grouping */}
+        <div className="grid grid-cols-3 gap-3 border border-border rounded p-3 bg-secondary/20">
+          <label className="block">
+            <span className="text-xs text-muted-foreground">Группировка по</span>
+            <select className="mt-1 w-full bg-secondary text-xs text-foreground rounded px-2 py-1.5 outline-none border border-border"
+              value={draft.groupByColId ?? ""} onChange={e => set({ groupByColId: e.target.value || null })}>
+              <option value="">— нет —</option>
+              {table?.columns.filter(c => c.type === "text").map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-xs text-muted-foreground">Фильтр по колонке</span>
+            <select className="mt-1 w-full bg-secondary text-xs text-foreground rounded px-2 py-1.5 outline-none border border-border"
+              value={draft.filterColId ?? ""} onChange={e => set({ filterColId: e.target.value || null })}>
+              <option value="">— нет —</option>
+              {table?.columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-xs text-muted-foreground">Значение фильтра</span>
+            <input className="mt-1 w-full bg-secondary text-xs text-foreground rounded px-2 py-1.5 outline-none border border-border"
+              value={draft.filterVal} onChange={e => set({ filterVal: e.target.value })} placeholder="любое..." />
+          </label>
+          <label className="block">
+            <span className="text-xs text-muted-foreground">Сортировка по</span>
+            <select className="mt-1 w-full bg-secondary text-xs text-foreground rounded px-2 py-1.5 outline-none border border-border"
+              value={draft.sortColId ?? ""} onChange={e => set({ sortColId: e.target.value || null })}>
+              <option value="">— нет —</option>
+              {table?.columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </label>
+          <label className="block">
+            <span className="text-xs text-muted-foreground">Направление</span>
+            <select className="mt-1 w-full bg-secondary text-xs text-foreground rounded px-2 py-1.5 outline-none border border-border"
+              value={draft.sortDir} onChange={e => set({ sortDir: e.target.value as "asc" | "desc" })}>
+              <option value="asc">По возрастанию</option>
+              <option value="desc">По убыванию</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2 mt-4">
+            <input type="checkbox" className="w-3 h-3 accent-primary" checked={draft.showTotals} onChange={e => set({ showTotals: e.target.checked })} />
+            <span className="text-xs text-muted-foreground">Строка итогов</span>
+          </label>
+        </div>
+
+        {/* Columns */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-medium text-foreground">Колонки отчёта</span>
+            <button onClick={addCol} className="flex items-center gap-1 text-xs text-primary hover:text-primary/80">
+              <Icon name="Plus" size={11} />Добавить
+            </button>
+          </div>
+          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+            {draft.cols.length === 0 && <p className="text-xs text-muted-foreground italic">Нет колонок</p>}
+            {draft.cols.map(rc => {
+              const col = table?.columns.find(c => c.id === rc.colId);
+              return (
+                <div key={rc.id} className="flex items-center gap-2 bg-secondary rounded px-2 py-1.5">
+                  <select className="bg-card text-xs text-foreground rounded px-1.5 py-1 outline-none border border-border flex-1"
+                    value={rc.colId} onChange={e => {
+                      const newCol = table?.columns.find(c => c.id === e.target.value);
+                      updateCol(rc.id, { colId: e.target.value, label: newCol?.name ?? rc.label });
+                    }}>
+                    {table?.columns.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <input className="bg-card text-xs text-foreground rounded px-1.5 py-1 outline-none border border-border w-28"
+                    value={rc.label} onChange={e => updateCol(rc.id, { label: e.target.value })} placeholder="Подпись" />
+                  <select className="bg-card text-xs text-foreground rounded px-1.5 py-1 outline-none border border-border w-28"
+                    value={rc.agg} onChange={e => updateCol(rc.id, { agg: e.target.value as ReportColAgg })}
+                    disabled={col?.type === "text"}>
+                    <option value="none">Без агрег.</option>
+                    <option value="sum">Сумма</option>
+                    <option value="avg">Среднее</option>
+                    <option value="count">Кол-во</option>
+                    <option value="min">Мин</option>
+                    <option value="max">Макс</option>
+                  </select>
+                  <button onClick={() => removeCol(rc.id)} className="text-muted-foreground hover:text-destructive">
+                    <Icon name="X" size={11} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="flex gap-2 justify-end">
+          <button onClick={onClose} className="px-3 py-1.5 text-xs rounded bg-secondary text-foreground">Отмена</button>
+          <button onClick={() => onSave(draft)} className="px-3 py-1.5 text-xs rounded bg-primary text-primary-foreground">Сохранить</button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
